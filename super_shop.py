@@ -1,5 +1,4 @@
 ﻿import streamlit as st
-from sqlalchemy import create_engine
 import pandas as pd
 import plotly.express as px
 import psycopg2
@@ -570,6 +569,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
