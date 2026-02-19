@@ -158,7 +158,7 @@ def generate_cash_memo_bytes(sale_id, customer_name, cart_items, total_amount, p
 
 # ---------------- HEADER ----------------
 st.set_page_config(page_title="SARDER SUPER SHOP", layout="wide")
-logo = Image.open("logo.png")
+logo = Image.open("Sarder Super Shop logo design.png")
 
 col1, col2 = st.columns([1,4])
 with col1:
@@ -406,6 +406,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
