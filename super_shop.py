@@ -263,6 +263,8 @@ elif menu == "Suppliers":
 # ================= SALES / POS =================
 elif menu == "Sales":
     st.header("🛒 POS Billing")
+
+    # Load data
     customers_df = pd.read_sql("SELECT customer_id,name FROM customers", conn)
     employees_df = pd.read_sql("SELECT employee_id,name FROM employees", conn)
     products_df = pd.read_sql("SELECT * FROM products", conn)
@@ -277,6 +279,7 @@ elif menu == "Sales":
     product_name = st.selectbox("Select Product", products_df['name'])
     selected_product = products_df[products_df['name'] == product_name].iloc[0]
 
+    # Quantity input
     qty = 0.0
     if selected_product['unit'] in ['kg','gm']:
         grams = st.number_input("Quantity in grams", min_value=0.0, step=50.0)
@@ -284,6 +287,7 @@ elif menu == "Sales":
     else:
         qty = st.number_input("Quantity (pcs)", min_value=1, step=1)
 
+    # Add product to cart
     if st.button("Add Product"):
         if selected_product is not None and qty > 0:
             existing = next((i for i in st.session_state.cart if i['product_id']==selected_product['product_id']), None)
@@ -299,31 +303,35 @@ elif menu == "Sales":
                     'unit_price': float(selected_product['selling_price']),
                     'total_price': float(qty) * float(selected_product['selling_price'])
                 })
-            st.success("Product Added!")
-            st.experimental_rerun()
-        else:
-            st.warning("Enter valid quantity!")
+            st.success("✅ Product Added to Cart!")
 
     # ---------------- SHOW CART ----------------
     if st.session_state.cart:
         st.subheader("🛒 Cart Items")
         updated_cart = []
+
         for idx, item in enumerate(st.session_state.cart):
             cols = st.columns([2,1,1,1,1,1])
             cols[0].write(item['product'])
             cols[1].write(item['unit'])
+
             # Editable Quantity
             if item['unit'] in ['kg','gm']:
                 grams = cols[2].number_input("Grams", value=float(item['quantity'])*1000, step=50.0, key=f"qty_{idx}")
-                new_qty = grams/1000
+                new_qty = grams / 1000
             else:
                 new_qty = cols[2].number_input("Qty", value=int(item['quantity']), step=1, key=f"qty_{idx}")
+
             # Editable Price
             new_price = cols[3].number_input("Price", value=float(item['unit_price']), key=f"price_{idx}")
-            new_total = new_qty*new_price
+
+            new_total = new_qty * new_price
             cols[4].write(f"{new_total:.2f}")
+
+            # Remove button
             remove = cols[5].button("❌", key=f"remove_{idx}")
-            if not remove and new_qty>0:
+
+            if not remove and new_qty > 0:
                 updated_cart.append({
                     'product_id': item['product_id'],
                     'product': item['product'],
@@ -332,6 +340,8 @@ elif menu == "Sales":
                     'unit_price': new_price,
                     'total_price': new_total
                 })
+
+        # Update cart in session
         st.session_state.cart = updated_cart
         total = sum(i['total_price'] for i in updated_cart)
         st.metric("Total Amount", f"{total:.2f}")
@@ -340,10 +350,11 @@ elif menu == "Sales":
         payment_method = st.selectbox("Payment Method", ["Cash","Card","Bkash","Nagad","Rocket"])
         amount_received = 0.0
         change_amount = 0.0
-        if payment_method=="Cash":
+
+        if payment_method == "Cash":
             amount_received = st.number_input("Amount Received", 0.0)
-            if amount_received>=total:
-                change_amount = amount_received-total
+            if amount_received >= total:
+                change_amount = amount_received - total
                 st.success(f"Change: {change_amount:.2f}")
             else:
                 st.warning("Insufficient cash!")
@@ -354,26 +365,27 @@ elif menu == "Sales":
 
         # Cancel Sale
         if st.button("Cancel Sale"):
-            st.session_state.cart=[]
-            st.experimental_rerun()
+            st.session_state.cart = []
+            st.success("Sale Cancelled ✅")
 
         # Confirm Sale
         if st.button("Confirm Sale"):
-            if payment_method=="Cash" and amount_received<total:
-                st.error("Insufficient cash received!")
+            if payment_method == "Cash" and amount_received < total:
+                st.error("❌ Insufficient cash received!")
             else:
                 try:
-                    # Get IDs from DataFrame
                     customer_id = int(customers_df.loc[customers_df['name']==customer,'customer_id'].iloc[0])
                     employee_id = int(employees_df.loc[employees_df['name']==employee,'employee_id'].iloc[0])
-                    # Insert Sale
+
+                    # Insert sale
                     cursor.execute("""
                         INSERT INTO sales
                         (customer_id, employee_id, total_amount, payment_method, amount_received, change_amount)
                         VALUES (?,?,?,?,?,?)
                     """,(customer_id,employee_id,total,payment_method,amount_received,change_amount))
                     sale_id = cursor.lastrowid
-                    # Insert Sale Items & Update Stock
+
+                    # Insert sale items and update stock
                     for item in st.session_state.cart:
                         cursor.execute("""
                             INSERT INTO sale_items
@@ -386,12 +398,15 @@ elif menu == "Sales":
                             WHERE product_id = ?
                         """,(item['quantity'],item['product_id']))
                     conn.commit()
-                    # Generate Cash Memo PDF
+
+                    # Generate and download cash memo
                     pdf_bytes = generate_cash_memo_bytes(sale_id, customer, st.session_state.cart, total, payment_method)
                     st.download_button("📥 Download Cash Memo", pdf_bytes, file_name=f"SSS-{sale_id}.pdf")
-                    st.session_state.cart=[]
+
+                    # Clear cart
+                    st.session_state.cart = []
                     st.success("✅ Sale Completed Successfully!")
-                    st.experimental_rerun()
+
                 except Exception as e:
                     conn.rollback()
                     st.error(f"❌ Error: {e}")
@@ -476,5 +491,6 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
