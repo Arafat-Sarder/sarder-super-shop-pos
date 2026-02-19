@@ -1,38 +1,105 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import plotly.express as px
-import psycopg2
+import sqlite3
 from fpdf import FPDF
-import datetime
 from PIL import Image
+from io import BytesIO
+import datetime
+import os
 
 # ---------------- DATABASE CONNECTION ----------------
 def get_connection():
-    return psycopg2.connect(
-        host="localhost",
-        database="supershop",
-        user="postgres",
-        password="182002"
-    )
+    conn = sqlite3.connect("supershop.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row  # allows dict-like access
+    return conn
 
 conn = get_connection()
 cursor = conn.cursor()
-# ---------------- CASH MEMO FUNCTION ----------------
-def generate_cash_memo(sale_id, customer_name, cart_items, total_amount, payment_method):
 
+# ---------------- CREATE TABLES IF NOT EXISTS ----------------
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS products(
+    product_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    barcode TEXT UNIQUE,
+    category TEXT,
+    unit TEXT,
+    purchase_price REAL,
+    selling_price REAL,
+    stock_quantity REAL,
+    minimum_stock REAL
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS customers(
+    customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    phone TEXT,
+    address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS employees(
+    employee_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    role TEXT,
+    salary REAL,
+    hired_date DATE
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS suppliers(
+    supplier_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    phone TEXT,
+    address TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS sales(
+    sale_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER,
+    employee_id INTEGER,
+    total_amount REAL,
+    payment_method TEXT,
+    amount_received REAL,
+    change_amount REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS sale_items(
+    item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id INTEGER,
+    product_id INTEGER,
+    quantity REAL,
+    unit_price REAL,
+    total_price REAL
+)
+""")
+
+conn.commit()
+
+# ---------------- CASH MEMO FUNCTION ----------------
+def generate_cash_memo_bytes(sale_id, customer_name, cart_items, total_amount, payment_method):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
     # -------- LOGO --------
-    pdf.image("D:\super shop\supershop\Sarder Super Shop logo design.png", x=10, y=8, w=30)
-
+    pdf.image("logo.png", x=10, y=8, w=30)
     pdf.ln(20)
 
     # -------- SHOP HEADER --------
     pdf.set_font("Arial", 'B', 18)
     pdf.cell(0, 10, "SARDER SUPER SHOP", ln=True, align='C')
-
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, "Kaligonj Bazar, Kalkini, Madaripur", ln=True, align='C')
     pdf.cell(0, 6, "Mobile: 01922388130", ln=True, align='C')
@@ -62,7 +129,6 @@ def generate_cash_memo(sale_id, customer_name, cart_items, total_amount, payment
 
     # -------- TABLE BODY --------
     pdf.set_font("Arial", '', 10)
-
     for item in cart_items:
         pdf.cell(60, 8, str(item['product']), 1)
         pdf.cell(25, 8, str(item['unit']), 1, align='C')
@@ -71,7 +137,7 @@ def generate_cash_memo(sale_id, customer_name, cart_items, total_amount, payment
         pdf.cell(30, 8, f"{item['total_price']:.2f}", 1, align='R')
         pdf.ln()
 
-    # -------- GRAND TOTAL SECTION --------
+    # -------- GRAND TOTAL --------
     pdf.set_font("Arial", 'B', 13)
     pdf.cell(110, 10, "")
     pdf.cell(40, 10, "GRAND TOTAL", 1)
@@ -85,35 +151,28 @@ def generate_cash_memo(sale_id, customer_name, cart_items, total_amount, payment
     pdf.cell(0, 6, "Goods once sold are not refundable without receipt.", ln=True, align='C')
     pdf.cell(0, 6, "Powered by Sarder POS System", ln=True, align='C')
 
-    filename = f"cash_memo_{sale_id}.pdf"
-    pdf.output(filename)
-
-    return filename
+    pdf_bytes = BytesIO()
+    pdf.output(pdf_bytes)
+    pdf_bytes.seek(0)
+    return pdf_bytes
 
 # ---------------- HEADER ----------------
 st.set_page_config(page_title="SARDER SUPER SHOP", layout="wide")
+logo = Image.open("logo.png")
 
-logo = Image.open("D:\super shop\supershop\Sarder Super Shop logo design.png")
-
-col1, col2 = st.columns([1, 4])
-
+col1, col2 = st.columns([1,4])
 with col1:
     st.image(logo, width=150)
-
 with col2:
     st.title("SARDER SUPER SHOP")
     st.caption("Super Shop Management System")
 
-
 menu = st.sidebar.selectbox("Select Module",
-    ["Products","Customers","Employees","Suppliers","Sales","Dashboard"]
-)
+                            ["Products","Customers","Employees","Suppliers","Sales","Dashboard"])
 
 # ================= PRODUCTS =================
 if menu == "Products":
     st.header("Add Product")
-
-    # Product inputs
     name = st.text_input("Product Name")
     barcode = st.text_input("Barcode (Unique for scanning)")
     category = st.selectbox("Category", ["Food","Electronics","Clothing","Stationery","Groceries","Toiletries"])
@@ -123,11 +182,10 @@ if menu == "Products":
     stock_quantity = st.number_input("Stock Quantity", 0)
     minimum_stock = st.number_input("Minimum Stock", 0)
 
-    # Add product button
     if st.button("Add Product"):
-        # Check if barcode already exists
-        existing_barcode = pd.read_sql(f"SELECT * FROM products WHERE barcode = '{barcode}'", conn)
-        if not existing_barcode.empty:
+        cursor.execute("SELECT * FROM products WHERE barcode=?", (barcode,))
+        existing_barcode = cursor.fetchall()
+        if existing_barcode:
             st.warning("This barcode already exists! Use a unique barcode.")
         elif not name or not barcode:
             st.warning("Product Name and Barcode are required!")
@@ -135,7 +193,7 @@ if menu == "Products":
             cursor.execute("""
                 INSERT INTO products
                 (name, barcode, category, unit, purchase_price, selling_price, stock_quantity, minimum_stock)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (?,?,?,?,?,?,?,?)
             """, (name, barcode, category, unit, purchase_price, selling_price, stock_quantity, minimum_stock))
             conn.commit()
             st.success("Product Added Successfully!")
@@ -158,95 +216,62 @@ if menu == "Products":
 # ================= CUSTOMERS =================
 elif menu == "Customers":
     st.header("👤 Add Customer")
-
     name = st.text_input("Customer Name")
     phone = st.text_input("Phone")
     address = st.text_area("Address")
-
     if st.button("Add Customer"):
         if not name:
             st.warning("Customer name required!")
         else:
-            cursor.execute("""
-                INSERT INTO customers (name, phone, address)
-                VALUES (%s, %s, %s)
-            """, (name, phone, address))
+            cursor.execute("INSERT INTO customers (name, phone, address) VALUES (?,?,?)", (name, phone, address))
             conn.commit()
             st.success("Customer Added Successfully!")
             st.rerun()
-
     st.subheader("Customer List")
-    customers_df = pd.read_sql("""
-        SELECT customer_id, name, phone, address, created_at
-        FROM customers
-        ORDER BY customer_id DESC
-    """, conn)
+    customers_df = pd.read_sql("SELECT customer_id, name, phone, address, created_at FROM customers ORDER BY customer_id DESC", conn)
     st.dataframe(customers_df)
 
 # ================= EMPLOYEES =================
 elif menu == "Employees":
     st.header("👨‍💼 Add Employee")
-
     name = st.text_input("Employee Name")
     role = st.selectbox("Role", ["Manager", "Cashier", "Salesman"])
     salary = st.number_input("Salary", 0.0)
     hired_date = st.date_input("Hired Date")
-
     if st.button("Add Employee"):
         if not name:
             st.warning("Employee name required!")
         else:
-            cursor.execute("""
-                INSERT INTO employees (name, role, salary, hired_date)
-                VALUES (%s, %s, %s, %s)
-            """, (name, role, salary, hired_date))
+            cursor.execute("INSERT INTO employees (name, role, salary, hired_date) VALUES (?,?,?,?)", (name, role, salary, hired_date))
             conn.commit()
             st.success("Employee Added Successfully!")
             st.rerun()
-
     st.subheader("Employee List")
-    employees_df = pd.read_sql("""
-        SELECT employee_id, name, role, salary, hired_date
-        FROM employees
-        ORDER BY employee_id DESC
-    """, conn)
+    employees_df = pd.read_sql("SELECT employee_id, name, role, salary, hired_date FROM employees ORDER BY employee_id DESC", conn)
     st.dataframe(employees_df)
 
 # ================= SUPPLIERS =================
 elif menu == "Suppliers":
     st.header("🚚 Add Supplier")
-
     name = st.text_input("Supplier Name")
     phone = st.text_input("Phone")
     address = st.text_area("Address")
-
     if st.button("Add Supplier"):
         if not name:
             st.warning("Supplier name required!")
         else:
-            cursor.execute("""
-                INSERT INTO suppliers (name, phone, address)
-                VALUES (%s, %s, %s)
-            """, (name, phone, address))
+            cursor.execute("INSERT INTO suppliers (name, phone, address) VALUES (?,?,?)", (name, phone, address))
             conn.commit()
             st.success("Supplier Added Successfully!")
             st.rerun()
-
     st.subheader("Supplier List")
-    suppliers_df = pd.read_sql("""
-        SELECT supplier_id, name, phone, address
-        FROM suppliers
-        ORDER BY supplier_id DESC
-    """, conn)
+    suppliers_df = pd.read_sql("SELECT supplier_id, name, phone, address FROM suppliers ORDER BY supplier_id DESC", conn)
     st.dataframe(suppliers_df)
 
 # ================= SALES =================
 elif menu == "Sales":
     st.header("🛒 POS Billing")
 
-    cursor = conn.cursor()
-
-    # --- Load Data ---
     customers = pd.read_sql("SELECT customer_id,name FROM customers", conn)
     employees = pd.read_sql("SELECT employee_id,name FROM employees", conn)
     products = pd.read_sql("SELECT * FROM products", conn)
@@ -258,30 +283,21 @@ elif menu == "Sales":
         st.session_state.cart = []
 
     st.subheader("➕ Add Product to Cart")
-
-    # --- Split products ---
     groceries = products[products['category'] == 'Groceries']
     others = products[products['category'] != 'Groceries']
-
     selected_product = None
-    selected_product_id = None
 
-    # --- Grocery Dropdown ---
     if not groceries.empty:
         product_name = st.selectbox("Select Grocery Product", groceries['name'])
         if product_name:
             selected_product = groceries[groceries['name'] == product_name].iloc[0]
-            selected_product_id = int(selected_product['product_id'])
 
-    # --- Barcode Scanner ---
     barcode = st.text_input("Scan Barcode (Non-Grocery)")
     if barcode:
         product_row = others[others['barcode'] == barcode]
         if not product_row.empty:
             selected_product = product_row.iloc[0]
-            selected_product_id = int(selected_product['product_id'])
 
-    # --- Quantity System ---
     qty = 0.0
     if selected_product is not None:
         if selected_product['unit'] in ['kg', 'gm']:
@@ -290,204 +306,25 @@ elif menu == "Sales":
         else:
             qty = st.number_input("Quantity (pcs)", min_value=1, step=1)
 
-    # --- Add to Cart ---
     if st.button("Add Product"):
         if selected_product is not None and qty > 0:
-
-            existing = next(
-                (i for i in st.session_state.cart if i['product_id'] == selected_product_id),
-                None
-            )
-
+            existing = next((i for i in st.session_state.cart if i['product_id']==selected_product['product_id']), None)
             if existing:
                 existing['quantity'] += float(qty)
                 existing['total_price'] = existing['quantity'] * existing['unit_price']
             else:
                 st.session_state.cart.append({
-                    'product_id': selected_product_id,
+                    'product_id': selected_product['product_id'],
                     'product': selected_product['name'],
                     'unit': selected_product['unit'],
                     'quantity': float(qty),
                     'unit_price': float(selected_product['selling_price']),
                     'total_price': float(qty) * float(selected_product['selling_price'])
                 })
-
             st.success("Product Added!")
             st.rerun()
         else:
             st.warning("Select product and enter valid quantity!")
-
-    # ================= SHOW CART =================
-    if st.session_state.cart:
-
-        st.subheader("🛒 Cart Items")
-
-        updated_cart = []
-
-        for index, item in enumerate(st.session_state.cart):
-
-            col1, col2, col3, col4, col5, col6 = st.columns([2,1,1,1,1,1])
-
-            with col1:
-                st.write(item['product'])
-
-            with col2:
-                st.write(item['unit'])
-
-            # Editable Quantity
-            with col3:
-                if item['unit'] in ['kg', 'gm']:
-                    grams = st.number_input(
-                        "Grams",
-                        min_value=0.0,
-                        value=float(item['quantity']) * 1000,
-                        step=50.0,
-                        key=f"qty_{index}"
-                    )
-                    new_qty = grams / 1000
-                else:
-                    new_qty = st.number_input(
-                        "Qty",
-                        min_value=0,
-                        value=int(item['quantity']),
-                        step=1,
-                        key=f"qty_{index}"
-                    )
-
-            # Editable Price
-            with col4:
-                new_price = st.number_input(
-                    "Price",
-                    min_value=0.0,
-                    value=float(item['unit_price']),
-                    key=f"price_{index}"
-                )
-
-            new_total = new_qty * new_price
-
-            with col5:
-                st.write(f"{new_total:.2f}")
-
-            with col6:
-                remove = st.button("❌", key=f"remove_{index}")
-
-            if not remove and new_qty > 0:
-                updated_cart.append({
-                    "product_id": item['product_id'],
-                    "product": item['product'],
-                    "unit": item['unit'],
-                    "quantity": float(new_qty),
-                    "unit_price": float(new_price),
-                    "total_price": float(new_total)
-                })
-
-        st.session_state.cart = updated_cart
-
-        total = sum(item['total_price'] for item in updated_cart)
-        st.metric("Total Amount", f"{total:.2f}")
-
-        # ================= PAYMENT =================
-        st.subheader("💳 Payment Section")
-
-        payment_method = st.selectbox(
-            "Payment Method",
-            ["Cash", "Card", "Bkash", "Nagad", "Rocket"]
-        )
-
-        amount_received = 0.0
-        change_amount = 0.0
-
-        if payment_method == "Cash":
-            amount_received = st.number_input("Amount Received", 0.0)
-            if amount_received >= total:
-                change_amount = amount_received - total
-                st.success(f"Change: {change_amount:.2f}")
-            else:
-                st.warning("Insufficient cash!")
-        else:
-            amount_received = total
-            change_amount = 0.0
-            st.info(f"Paid via {payment_method}")
-
-        # ================= CANCEL =================
-        if st.button("Cancel Sale"):
-            st.session_state.cart = []
-            st.rerun()
-
-        # ================= CONFIRM =================
-        if st.button("Confirm Sale"):
-            if payment_method == "Cash" and amount_received < total:
-                st.error("Insufficient cash received!")
-            else:
-                try:
-                    # --- Insert Sale ---
-                    cursor.execute("""
-                        INSERT INTO sales
-                        (customer_id, employee_id, total_amount,
-                         payment_method, amount_received, change_amount)
-                        VALUES (%s,%s,%s,%s,%s,%s)
-                        RETURNING sale_id
-                    """, (
-                        int(customers[customers['name'] == customer]['customer_id'].iloc[0]),
-                        int(employees[employees['name'] == employee]['employee_id'].iloc[0]),
-                        total,
-                        payment_method,
-                        amount_received,
-                        change_amount
-                    ))
-
-                    sale_id = cursor.fetchone()[0]
-
-                    # --- Insert Sale Items & Update Stock ---
-                    for item in st.session_state.cart:
-                        cursor.execute("""
-                            INSERT INTO sale_items
-                            (sale_id, product_id, quantity, unit_price, total_price)
-                            VALUES (%s,%s,%s,%s,%s)
-                        """, (
-                            sale_id,
-                            item['product_id'],
-                            item['quantity'],
-                            item['unit_price'],
-                            item['total_price']
-                        ))
-
-                        cursor.execute("""
-                            UPDATE products
-                            SET stock_quantity = stock_quantity - %s
-                            WHERE product_id = %s
-                        """, (
-                            item['quantity'],
-                            item['product_id']
-                        ))
-
-                    conn.commit()
-
-                    # --- Generate & Download Cash Memo ---
-                    filename = generate_cash_memo(
-                        sale_id,
-                        customer,
-                        st.session_state.cart,
-                        total,
-                        payment_method
-                    )
-
-                    with open(filename, "rb") as f:
-                        st.download_button(
-                            label="📥 Download Cash Memo",
-                            data=f,
-                            file_name=filename
-                        )
-
-                    # --- Clear Cart & Success ---
-                    st.session_state.cart = []
-                    st.success("✅ Sale Completed Successfully!")
-                    st.rerun()
-
-                except Exception as e:
-                    conn.rollback()
-                    st.error(f"❌ Error: {e}")
-
 
 # ================= DASHBOARD =================
 elif menu == "Dashboard":
@@ -569,6 +406,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
