@@ -86,6 +86,11 @@ CREATE TABLE IF NOT EXISTS sale_items(
 """)
 conn.commit()
 
+from fpdf import FPDF
+from io import BytesIO
+import os
+import datetime
+
 # ---------------- CASH MEMO FUNCTION ----------------
 def generate_cash_memo_bytes(sale_id, customer_name, cart_items, total_amount, payment_method):
     pdf = FPDF()
@@ -151,11 +156,11 @@ def generate_cash_memo_bytes(sale_id, customer_name, cart_items, total_amount, p
     pdf.cell(0, 6, "Goods once sold are not refundable without receipt.", ln=True, align='C')
     pdf.cell(0, 6, "Powered by Sarder POS System", ln=True, align='C')
 
+    # -------- FIX: Save PDF to BytesIO correctly --------
     pdf_bytes = BytesIO()
-    pdf.output(pdf_bytes)
+    pdf.output(pdf_bytes, 'F')  # 'F' writes to file-like object
     pdf_bytes.seek(0)
     return pdf_bytes
-
 # ---------------- HEADER ----------------
 st.set_page_config(page_title="SARDER SUPER SHOP", layout="wide")
 if os.path.exists("Sarder Super Shop logo design.png"):
@@ -491,6 +496,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
