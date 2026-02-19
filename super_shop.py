@@ -156,9 +156,9 @@ def generate_cash_memo_bytes(sale_id, customer_name, cart_items, total_amount, p
     pdf.cell(0, 6, "Goods once sold are not refundable without receipt.", ln=True, align='C')
     pdf.cell(0, 6, "Powered by Sarder POS System", ln=True, align='C')
 
-    # -------- FIX: Save PDF to BytesIO correctly --------
-    pdf_bytes = BytesIO()
-    pdf.output(pdf_bytes, 'F')  # 'F' writes to file-like object
+    # -------- FIXED: Save PDF to BytesIO --------
+    pdf_str = pdf.output(dest='S').encode('latin1')  # returns PDF as bytes
+    pdf_bytes = BytesIO(pdf_str)
     pdf_bytes.seek(0)
     return pdf_bytes
 # ---------------- HEADER ----------------
@@ -496,6 +496,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
