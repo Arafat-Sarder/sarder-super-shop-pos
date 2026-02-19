@@ -94,7 +94,7 @@ def generate_cash_memo_bytes(sale_id, customer_name, cart_items, total_amount, p
     pdf.add_page()
 
     # -------- LOGO --------
-    pdf.image("logo.png", x=10, y=8, w=30)
+    pdf.image("Sarder Super Shop logo design.png", x=10, y=8, w=30)
     pdf.ln(20)
 
     # -------- SHOP HEADER --------
@@ -286,18 +286,18 @@ elif menu == "Sales":
     groceries = products[products['category'] == 'Groceries']
     others = products[products['category'] != 'Groceries']
     selected_product = None
-
+    selected_product_id = None
     if not groceries.empty:
         product_name = st.selectbox("Select Grocery Product", groceries['name'])
         if product_name:
             selected_product = groceries[groceries['name'] == product_name].iloc[0]
-
+            selected_product_id = int(selected_product['product_id'])
     barcode = st.text_input("Scan Barcode (Non-Grocery)")
     if barcode:
         product_row = others[others['barcode'] == barcode]
         if not product_row.empty:
             selected_product = product_row.iloc[0]
-
+            selected_product_id = int(selected_product['product_id'])
     qty = 0.0
     if selected_product is not None:
         if selected_product['unit'] in ['kg', 'gm']:
@@ -406,6 +406,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
