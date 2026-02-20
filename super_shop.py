@@ -304,6 +304,23 @@ elif menu == "Sales":
     customer = st.selectbox("Customer", [""] + list(customers_df['name']))
     employee = st.selectbox("Employee", [""] + list(employees_df['name']))
 
+    if customer == "" or employee == "":
+        st.warning("Please select a customer and an employee to continue.")
+        st.stop()
+
+    customer_row = customers_df[customers_df['name'] == customer]
+    if customer_row.empty:
+        st.error("Selected customer not found in database!")
+        st.stop()
+    customer_id = int(customer_row['customer_id'].iloc[0])
+
+    employee_row = employees_df[employees_df['name'] == employee]
+    if employee_row.empty:
+        st.error("Selected employee not found in database!")
+        st.stop()
+    employee_id = int(employee_row['employee_id'].iloc[0])
+
+    # ---------------- INITIALIZE CART ----------------
     if 'cart' not in st.session_state:
         st.session_state.cart = []
 
@@ -465,20 +482,6 @@ elif menu == "Sales":
                 st.stop()
 
             try:
-                customer_id = int(
-                    customers_df.loc[
-                        customers_df['name'] == customer,
-                        'customer_id'
-                    ].iloc[0]
-                )
-
-                employee_id = int(
-                    employees_df.loc[
-                        employees_df['name'] == employee,
-                        'employee_id'
-                    ].iloc[0]
-                )
-
                 cursor.execute("""
                     INSERT INTO sales
                     (customer_id, employee_id, total_amount,
@@ -605,6 +608,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
