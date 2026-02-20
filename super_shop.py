@@ -85,7 +85,28 @@ CREATE TABLE IF NOT EXISTS sale_items(
 )
 """)
 conn.commit()
+# ---------------- AUTO INSERT DEFAULT DATA ----------------
+def seed_default_data():
 
+    # Default Customer
+    cursor.execute("SELECT COUNT(*) FROM customers")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+            INSERT INTO customers (name, phone, address)
+            VALUES ('Walk-in Customer', 'N/A', 'Local')
+        """)
+
+    # Default Employee
+    cursor.execute("SELECT COUNT(*) FROM employees")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+            INSERT INTO employees (name, role, salary, hired_date)
+            VALUES ('Admin', 'Manager', 0, DATE('now'))
+        """)
+
+    conn.commit()
+
+seed_default_data()
 from fpdf import FPDF
 from io import BytesIO
 import os
@@ -560,6 +581,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
