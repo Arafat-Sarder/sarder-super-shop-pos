@@ -534,40 +534,49 @@ elif menu == "Dashboard":
 
     # --- Sales & Profit by Product ---
     sales_df = pd.read_sql("""
-        SELECT p.name, si.quantity, si.total_price, p.purchase_price
+        SELECT p.name AS product_name, si.quantity, si.total_price, p.purchase_price, s.created_at
         FROM sale_items si
         JOIN products p ON si.product_id = p.product_id
+        JOIN sales s ON si.sale_id = s.sale_id
     """, conn)
 
     if not sales_df.empty:
+        # Calculate profit per item
         sales_df['profit'] = sales_df['total_price'] - (sales_df['purchase_price'] * sales_df['quantity'])
 
-        # Create two columns for metrics
-        col1, col2 = st.columns(2)
+        # --- Key Metrics ---
+        st.subheader("💰 Key Metrics")
+        total_revenue = sales_df['total_price'].sum()
+        total_profit = sales_df['profit'].sum()
+        total_items_sold = sales_df['quantity'].sum()
+        total_sales = sales_df['total_price'].count()
 
-        with col1:
-            st.metric("Total Revenue", f"{sales_df['total_price'].sum():.2f}")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Revenue", f"৳{total_revenue:.2f}")
+        col2.metric("Total Profit", f"৳{total_profit:.2f}")
+        col3.metric("Total Items Sold", f"{total_items_sold}")
 
-        with col2:
-            st.metric("Total Profit", f"{sales_df['profit'].sum():.2f}")
-
-
-        # Revenue by product bar chart
-        revenue_by_product = sales_df.groupby('name')['total_price'].sum().reset_index()
-        fig = px.bar(
+        # --- Revenue by Product ---
+        st.subheader("📦 Revenue by Product")
+        revenue_by_product = sales_df.groupby('product_name')['total_price'].sum().reset_index()
+        revenue_by_product = revenue_by_product.sort_values(by='total_price', ascending=False)
+        fig1 = px.bar(
             revenue_by_product,
-            x='name',
+            x='product_name',
             y='total_price',
             title="Revenue by Product",
-            text='total_price'
+            text='total_price',
+            labels={"product_name": "Product", "total_price": "Revenue (৳)"}
         )
-        fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
-        st.plotly_chart(fig)
+        fig1.update_traces(texttemplate='৳%{text:.2f}', textposition='outside')
+        fig1.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig1, use_container_width=True)
 
     else:
         st.info("No sales data available.")
 
     # --- Low Stock Alert ---
+    st.subheader("⚠ Low Stock Products")
     low_stock = pd.read_sql("""
         SELECT name, stock_quantity, minimum_stock
         FROM products
@@ -575,13 +584,13 @@ elif menu == "Dashboard":
         ORDER BY stock_quantity ASC
     """, conn)
 
-    st.subheader("⚠ Low Stock Products")
     if not low_stock.empty:
         st.dataframe(low_stock)
     else:
         st.success("All products have sufficient stock.")
 
     # --- Daily Sales Report ---
+    st.subheader("📅 Daily Sales Report")
     daily_sales = pd.read_sql("""
         SELECT DATE(created_at) AS sale_date, SUM(total_amount) AS total_sales
         FROM sales
@@ -589,8 +598,11 @@ elif menu == "Dashboard":
         ORDER BY sale_date
     """, conn)
 
-    st.subheader("📅 Daily Sales Report")
     if not daily_sales.empty:
+        # Calculate cumulative and 7-day average
+        daily_sales['cumulative_sales'] = daily_sales['total_sales'].cumsum()
+        daily_sales['7d_avg'] = daily_sales['total_sales'].rolling(7).mean()
+
         st.dataframe(daily_sales)
 
         # Line chart for daily sales
@@ -599,15 +611,40 @@ elif menu == "Dashboard":
             x='sale_date',
             y='total_sales',
             title="Daily Sales",
-            markers=True
+            markers=True,
+            labels={"sale_date": "Date", "total_sales": "Total Sales (৳)"}
         )
-        st.plotly_chart(fig2)
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # Line chart for cumulative sales
+        fig3 = px.line(
+            daily_sales,
+            x='sale_date',
+            y='cumulative_sales',
+            title="Cumulative Sales",
+            markers=True,
+            labels={"sale_date": "Date", "cumulative_sales": "Cumulative Sales (৳)"}
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+
+        # Line chart for 7-day moving average
+        fig4 = px.line(
+            daily_sales,
+            x='sale_date',
+            y='7d_avg',
+            title="7-Day Average Sales",
+            markers=True,
+            labels={"sale_date": "Date", "7d_avg": "7-Day Avg (৳)"}
+        )
+        st.plotly_chart(fig4, use_container_width=True)
+
     else:
         st.info("No daily sales data available.")
 
 
 cursor.close()
 conn.close()
+
 
 
 
