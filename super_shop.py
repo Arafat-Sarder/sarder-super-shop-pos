@@ -532,7 +532,7 @@ elif menu == "Sales":
 def show_dashboard():
     st.header("📊 Dashboard")
 
-    # --- Sales & Profit by Product ---
+    # ---------------- SALES DATA ----------------
     sales_df = pd.read_sql("""
         SELECT p.name, si.quantity, si.total_price, p.purchase_price
         FROM sale_items si
@@ -542,15 +542,24 @@ def show_dashboard():
     if not sales_df.empty:
         # Calculate profit per item
         sales_df['profit'] = sales_df['total_price'] - (sales_df['purchase_price'] * sales_df['quantity'])
+        total_revenue = sales_df['total_price'].sum()
+        total_profit = sales_df['profit'].sum()
+    else:
+        # No sales yet
+        total_revenue = 0
+        total_profit = 0
+        sales_df = pd.DataFrame(columns=['name', 'total_price', 'profit'])
 
-        # --- Key Metrics ---
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Revenue", f"{sales_df['total_price'].sum():.2f}")
-        with col2:
-            st.metric("Total Profit", f"{sales_df['profit'].sum():.2f}")
+    # ---------------- KEY METRICS ----------------
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Revenue", f"{total_revenue:.2f}")
+    with col2:
+        st.metric("Total Profit", f"{total_profit:.2f}")
 
-        # --- Revenue by Product ---
+    # ---------------- REVENUE BY PRODUCT ----------------
+    st.subheader("💰 Revenue by Product")
+    if not sales_df.empty:
         revenue_by_product = sales_df.groupby('name')['total_price'].sum().reset_index()
         fig = px.bar(
             revenue_by_product,
@@ -561,11 +570,10 @@ def show_dashboard():
         )
         fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
         st.plotly_chart(fig, use_container_width=True)
-
     else:
-        st.info("No sales data available.")
+        st.info("No sales data available to display revenue by product.")
 
-    # --- Low Stock Alert ---
+    # ---------------- LOW STOCK ALERT ----------------
     st.subheader("⚠ Low Stock Products")
     low_stock = pd.read_sql("""
         SELECT name, stock_quantity, minimum_stock
@@ -579,7 +587,7 @@ def show_dashboard():
     else:
         st.success("All products have sufficient stock.")
 
-    # --- Daily Sales Report ---
+    # ---------------- DAILY SALES REPORT ----------------
     st.subheader("📅 Daily Sales Report")
     daily_sales = pd.read_sql("""
         SELECT DATE(created_at) AS sale_date, SUM(total_amount) AS total_sales
@@ -590,7 +598,6 @@ def show_dashboard():
 
     if not daily_sales.empty:
         st.dataframe(daily_sales)
-
         # Line chart for daily sales
         fig2 = px.line(
             daily_sales,
@@ -605,6 +612,7 @@ def show_dashboard():
     
 cursor.close()
 conn.close()
+
 
 
 
