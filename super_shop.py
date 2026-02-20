@@ -274,6 +274,11 @@ elif menu == "Sales":
     employees_df = pd.read_sql("SELECT employee_id,name FROM employees", conn)
     products_df = pd.read_sql("SELECT * FROM products", conn)
 
+    # ---------------- SAFETY CHECK ----------------
+    if customers_df.empty or employees_df.empty or products_df.empty:
+        st.error("Database tables are empty! Please check your data.")
+        st.stop()
+
     customer = st.selectbox("Customer", customers_df['name'])
     employee = st.selectbox("Employee", employees_df['name'])
 
@@ -281,21 +286,43 @@ elif menu == "Sales":
         st.session_state.cart = []
 
     st.subheader("➕ Add Product to Cart")
-    product_name = st.selectbox("Select Product", products_df['name'])
-    selected_product = products_df[products_df['name'] == product_name].iloc[0]
 
-    # Quantity input
+    product_name = st.selectbox("Select Product", products_df['name'].dropna().unique())
+
+    # -------- SAFE PRODUCT FILTER --------
+    filtered_product = products_df[
+        products_df['name'].str.strip().str.lower() == product_name.strip().lower()
+    ]
+
+    if filtered_product.empty:
+        st.error("Product not found in database!")
+        st.stop()
+
+    selected_product = filtered_product.iloc[0]
+
+    # ---------------- QUANTITY INPUT ----------------
     qty = 0.0
-    if selected_product['unit'] in ['kg','gm']:
+
+    if selected_product['unit'] in ['kg', 'gm']:
         grams = st.number_input("Quantity in grams", min_value=0.0, step=50.0)
         qty = grams / 1000
     else:
         qty = st.number_input("Quantity (pcs)", min_value=1, step=1)
 
-    # Add product to cart
+    # ---------------- ADD PRODUCT ----------------
     if st.button("Add Product"):
-        if selected_product is not None and qty > 0:
-            existing = next((i for i in st.session_state.cart if i['product_id']==selected_product['product_id']), None)
+
+        if qty <= 0:
+            st.warning("Please enter valid quantity.")
+        elif qty > float(selected_product['stock_quantity']):
+            st.warning("Not enough stock available!")
+        else:
+            existing = next(
+                (i for i in st.session_state.cart
+                 if i['product_id'] == selected_product['product_id']),
+                None
+            )
+
             if existing:
                 existing['quantity'] += float(qty)
                 existing['total_price'] = existing['quantity'] * existing['unit_price']
@@ -308,6 +335,7 @@ elif menu == "Sales":
                     'unit_price': float(selected_product['selling_price']),
                     'total_price': float(qty) * float(selected_product['selling_price'])
                 })
+
             st.success("✅ Product Added to Cart!")
 
     # ---------------- SHOW CART ----------------
@@ -320,20 +348,31 @@ elif menu == "Sales":
             cols[0].write(item['product'])
             cols[1].write(item['unit'])
 
-            # Editable Quantity
             if item['unit'] in ['kg','gm']:
-                grams = cols[2].number_input("Grams", value=float(item['quantity'])*1000, step=50.0, key=f"qty_{idx}")
+                grams = cols[2].number_input(
+                    "Grams",
+                    value=float(item['quantity']) * 1000,
+                    step=50.0,
+                    key=f"qty_{idx}"
+                )
                 new_qty = grams / 1000
             else:
-                new_qty = cols[2].number_input("Qty", value=int(item['quantity']), step=1, key=f"qty_{idx}")
+                new_qty = cols[2].number_input(
+                    "Qty",
+                    value=int(item['quantity']),
+                    step=1,
+                    key=f"qty_{idx}"
+                )
 
-            # Editable Price
-            new_price = cols[3].number_input("Price", value=float(item['unit_price']), key=f"price_{idx}")
+            new_price = cols[3].number_input(
+                "Price",
+                value=float(item['unit_price']),
+                key=f"price_{idx}"
+            )
 
             new_total = new_qty * new_price
             cols[4].write(f"{new_total:.2f}")
 
-            # Remove button
             remove = cols[5].button("❌", key=f"remove_{idx}")
 
             if not remove and new_qty > 0:
@@ -346,18 +385,20 @@ elif menu == "Sales":
                     'total_price': new_total
                 })
 
-        # Update cart in session
         st.session_state.cart = updated_cart
         total = sum(i['total_price'] for i in updated_cart)
         st.metric("Total Amount", f"{total:.2f}")
 
         # ---------------- PAYMENT ----------------
-        payment_method = st.selectbox("Payment Method", ["Cash","Card","Bkash","Nagad","Rocket"])
+        payment_method = st.selectbox("Payment Method",
+                                      ["Cash","Card","Bkash","Nagad","Rocket"])
+
         amount_received = 0.0
         change_amount = 0.0
 
         if payment_method == "Cash":
             amount_received = st.number_input("Amount Received", 0.0)
+
             if amount_received >= total:
                 change_amount = amount_received - total
                 st.success(f"Change: {change_amount:.2f}")
@@ -365,57 +406,80 @@ elif menu == "Sales":
                 st.warning("Insufficient cash!")
         else:
             amount_received = total
-            change_amount = 0.0
             st.info(f"Paid via {payment_method}")
 
-        # Cancel Sale
+        # ---------------- CANCEL ----------------
         if st.button("Cancel Sale"):
             st.session_state.cart = []
             st.success("Sale Cancelled ✅")
 
-        # Confirm Sale
+        # ---------------- CONFIRM ----------------
         if st.button("Confirm Sale"):
+
             if payment_method == "Cash" and amount_received < total:
                 st.error("❌ Insufficient cash received!")
-            else:
-                try:
-                    customer_id = int(customers_df.loc[customers_df['name']==customer,'customer_id'].iloc[0])
-                    employee_id = int(employees_df.loc[employees_df['name']==employee,'employee_id'].iloc[0])
+                st.stop()
 
-                    # Insert sale
+            try:
+                customer_id = int(
+                    customers_df.loc[
+                        customers_df['name'] == customer,
+                        'customer_id'
+                    ].iloc[0]
+                )
+
+                employee_id = int(
+                    employees_df.loc[
+                        employees_df['name'] == employee,
+                        'employee_id'
+                    ].iloc[0]
+                )
+
+                cursor.execute("""
+                    INSERT INTO sales
+                    (customer_id, employee_id, total_amount,
+                     payment_method, amount_received, change_amount)
+                    VALUES (?,?,?,?,?,?)
+                """, (customer_id, employee_id, total,
+                      payment_method, amount_received, change_amount))
+
+                sale_id = cursor.lastrowid
+
+                for item in st.session_state.cart:
                     cursor.execute("""
-                        INSERT INTO sales
-                        (customer_id, employee_id, total_amount, payment_method, amount_received, change_amount)
-                        VALUES (?,?,?,?,?,?)
-                    """,(customer_id,employee_id,total,payment_method,amount_received,change_amount))
-                    sale_id = cursor.lastrowid
+                        INSERT INTO sale_items
+                        (sale_id, product_id, quantity, unit_price, total_price)
+                        VALUES (?,?,?,?,?)
+                    """, (sale_id, item['product_id'],
+                          item['quantity'], item['unit_price'],
+                          item['total_price']))
 
-                    # Insert sale items and update stock
-                    for item in st.session_state.cart:
-                        cursor.execute("""
-                            INSERT INTO sale_items
-                            (sale_id, product_id, quantity, unit_price, total_price)
-                            VALUES (?,?,?,?,?)
-                        """,(sale_id,item['product_id'],item['quantity'],item['unit_price'],item['total_price']))
-                        cursor.execute("""
-                            UPDATE products
-                            SET stock_quantity = stock_quantity - ?
-                            WHERE product_id = ?
-                        """,(item['quantity'],item['product_id']))
-                    conn.commit()
+                    cursor.execute("""
+                        UPDATE products
+                        SET stock_quantity = stock_quantity - ?
+                        WHERE product_id = ?
+                    """, (item['quantity'], item['product_id']))
 
-                    # Generate and download cash memo
-                    pdf_bytes = generate_cash_memo_bytes(sale_id, customer, st.session_state.cart, total, payment_method)
-                    st.download_button("📥 Download Cash Memo", pdf_bytes, file_name=f"SSS-{sale_id}.pdf")
+                conn.commit()
 
-                    # Clear cart
-                    st.session_state.cart = []
-                    st.success("✅ Sale Completed Successfully!")
+                pdf_bytes = generate_cash_memo_bytes(
+                    sale_id, customer,
+                    st.session_state.cart,
+                    total, payment_method
+                )
 
-                except Exception as e:
-                    conn.rollback()
-                    st.error(f"❌ Error: {e}")
+                st.download_button(
+                    "📥 Download Cash Memo",
+                    pdf_bytes,
+                    file_name=f"SSS-{sale_id}.pdf"
+                )
 
+                st.session_state.cart = []
+                st.success("✅ Sale Completed Successfully!")
+
+            except Exception as e:
+                conn.rollback()
+                st.error(f"❌ Error: {e}")
 # ================= DASHBOARD =================
 elif menu == "Dashboard":
     st.header("📊 Dashboard")
@@ -496,6 +560,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
