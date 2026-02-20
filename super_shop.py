@@ -529,15 +529,14 @@ elif menu == "Sales":
                 conn.rollback()
                 st.error(f"❌ Error: {e}")
 # ================= DASHBOARD =================
-elif menu == "Dashboard":
+def show_dashboard():
     st.header("📊 Dashboard")
 
     # --- Sales & Profit by Product ---
     sales_df = pd.read_sql("""
-        SELECT p.name AS product_name, si.quantity, si.total_price, p.purchase_price, s.created_at
+        SELECT p.name, si.quantity, si.total_price, p.purchase_price
         FROM sale_items si
         JOIN products p ON si.product_id = p.product_id
-        JOIN sales s ON si.sale_id = s.sale_id
     """, conn)
 
     if not sales_df.empty:
@@ -545,32 +544,23 @@ elif menu == "Dashboard":
         sales_df['profit'] = sales_df['total_price'] - (sales_df['purchase_price'] * sales_df['quantity'])
 
         # --- Key Metrics ---
-        st.subheader("💰 Key Metrics")
-        total_revenue = sales_df['total_price'].sum()
-        total_profit = sales_df['profit'].sum()
-        total_items_sold = sales_df['quantity'].sum()
-        total_sales = sales_df['total_price'].count()
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Revenue", f"৳{total_revenue:.2f}")
-        col2.metric("Total Profit", f"৳{total_profit:.2f}")
-        col3.metric("Total Items Sold", f"{total_items_sold}")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Revenue", f"{sales_df['total_price'].sum():.2f}")
+        with col2:
+            st.metric("Total Profit", f"{sales_df['profit'].sum():.2f}")
 
         # --- Revenue by Product ---
-        st.subheader("📦 Revenue by Product")
-        revenue_by_product = sales_df.groupby('product_name')['total_price'].sum().reset_index()
-        revenue_by_product = revenue_by_product.sort_values(by='total_price', ascending=False)
-        fig1 = px.bar(
+        revenue_by_product = sales_df.groupby('name')['total_price'].sum().reset_index()
+        fig = px.bar(
             revenue_by_product,
-            x='product_name',
+            x='name',
             y='total_price',
             title="Revenue by Product",
-            text='total_price',
-            labels={"product_name": "Product", "total_price": "Revenue (৳)"}
+            text='total_price'
         )
-        fig1.update_traces(texttemplate='৳%{text:.2f}', textposition='outside')
-        fig1.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig1, use_container_width=True)
+        fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+        st.plotly_chart(fig, use_container_width=True)
 
     else:
         st.info("No sales data available.")
@@ -599,10 +589,6 @@ elif menu == "Dashboard":
     """, conn)
 
     if not daily_sales.empty:
-        # Calculate cumulative and 7-day average
-        daily_sales['cumulative_sales'] = daily_sales['total_sales'].cumsum()
-        daily_sales['7d_avg'] = daily_sales['total_sales'].rolling(7).mean()
-
         st.dataframe(daily_sales)
 
         # Line chart for daily sales
@@ -611,39 +597,15 @@ elif menu == "Dashboard":
             x='sale_date',
             y='total_sales',
             title="Daily Sales",
-            markers=True,
-            labels={"sale_date": "Date", "total_sales": "Total Sales (৳)"}
+            markers=True
         )
         st.plotly_chart(fig2, use_container_width=True)
-
-        # Line chart for cumulative sales
-        fig3 = px.line(
-            daily_sales,
-            x='sale_date',
-            y='cumulative_sales',
-            title="Cumulative Sales",
-            markers=True,
-            labels={"sale_date": "Date", "cumulative_sales": "Cumulative Sales (৳)"}
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-
-        # Line chart for 7-day moving average
-        fig4 = px.line(
-            daily_sales,
-            x='sale_date',
-            y='7d_avg',
-            title="7-Day Average Sales",
-            markers=True,
-            labels={"sale_date": "Date", "7d_avg": "7-Day Avg (৳)"}
-        )
-        st.plotly_chart(fig4, use_container_width=True)
-
     else:
         st.info("No daily sales data available.")
-
-
+    
 cursor.close()
 conn.close()
+
 
 
 
