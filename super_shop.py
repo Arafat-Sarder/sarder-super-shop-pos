@@ -529,7 +529,7 @@ elif menu == "Sales":
                 conn.rollback()
                 st.error(f"❌ Error: {e}")
 # ================= DASHBOARD =================
-def show_dashboard():
+elif menu == "Dashboard":
     st.header("📊 Dashboard")
 
     # ---------------- SALES DATA ----------------
@@ -609,9 +609,12 @@ def show_dashboard():
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("No daily sales data available.")
+
+# NOTE: Do NOT close the connection here! Keep `conn` and `cursor` open
     
 cursor.close()
 conn.close()
+
 
 
 
