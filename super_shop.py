@@ -290,7 +290,7 @@ elif menu == "Suppliers":
 elif menu == "Sales":
     st.header("🛒 POS Billing")
 
-    # Load data
+    # ---------------- LOAD DATA ----------------
     customers_df = pd.read_sql("SELECT customer_id,name FROM customers", conn)
     employees_df = pd.read_sql("SELECT employee_id,name FROM employees", conn)
     products_df = pd.read_sql("SELECT * FROM products", conn)
@@ -300,64 +300,87 @@ elif menu == "Sales":
         st.error("Database tables are empty! Please check your data.")
         st.stop()
 
-    customer = st.selectbox("Customer", customers_df['name'])
-    employee = st.selectbox("Employee", employees_df['name'])
+    # ---------------- CUSTOMER / EMPLOYEE ----------------
+    customer = st.selectbox("Customer", [""] + list(customers_df['name']))
+    employee = st.selectbox("Employee", [""] + list(employees_df['name']))
 
     if 'cart' not in st.session_state:
         st.session_state.cart = []
 
+    # ---------------- ADD PRODUCT ----------------
     st.subheader("➕ Add Product to Cart")
 
-    product_name = st.selectbox("Select Product", products_df['name'].dropna().unique())
+    # Split products
+    groceries = products_df[products_df['category'] == 'Groceries']
+    non_groceries = products_df[products_df['category'] != 'Groceries']
 
-    # -------- SAFE PRODUCT FILTER --------
-    filtered_product = products_df[
-        products_df['name'].str.strip().str.lower() == product_name.strip().lower()
-    ]
+    selected_product = None
+    selected_product_id = None
 
-    if filtered_product.empty:
-        st.error("Product not found in database!")
-        st.stop()
+    # --- Grocery dropdown
+    if not groceries.empty:
+        grocery_list = [""] + list(groceries['name'].dropna().unique())
+        product_name = st.selectbox("Select Grocery Product", grocery_list)
 
-    selected_product = filtered_product.iloc[0]
-
-    # ---------------- QUANTITY INPUT ----------------
-    qty = 0.0
-
-    if selected_product['unit'] in ['kg', 'gm']:
-        grams = st.number_input("Quantity in grams", min_value=0.0, step=50.0)
-        qty = grams / 1000
-    else:
-        qty = st.number_input("Quantity (pcs)", min_value=1, step=1)
-
-    # ---------------- ADD PRODUCT ----------------
-    if st.button("Add Product"):
-
-        if qty <= 0:
-            st.warning("Please enter valid quantity.")
-        elif qty > float(selected_product['stock_quantity']):
-            st.warning("Not enough stock available!")
-        else:
-            existing = next(
-                (i for i in st.session_state.cart
-                 if i['product_id'] == selected_product['product_id']),
-                None
-            )
-
-            if existing:
-                existing['quantity'] += float(qty)
-                existing['total_price'] = existing['quantity'] * existing['unit_price']
+        if product_name != "":
+            filtered_product = groceries[
+                groceries['name'].str.strip().str.lower() == product_name.strip().lower()
+            ]
+            if not filtered_product.empty:
+                selected_product = filtered_product.iloc[0]
+                selected_product_id = int(selected_product['product_id'])
             else:
-                st.session_state.cart.append({
-                    'product_id': selected_product['product_id'],
-                    'product': selected_product['name'],
-                    'unit': selected_product['unit'],
-                    'quantity': float(qty),
-                    'unit_price': float(selected_product['selling_price']),
-                    'total_price': float(qty) * float(selected_product['selling_price'])
-                })
+                st.error("❌ Grocery product not found!")
 
-            st.success("✅ Product Added to Cart!")
+    # --- Non-grocery barcode scanning
+    barcode = st.text_input("Scan Barcode (Non-Grocery)")
+    if barcode:
+        product_row = non_groceries[non_groceries['barcode'] == barcode]
+        if not product_row.empty:
+            selected_product = product_row.iloc[0]
+            selected_product_id = int(selected_product['product_id'])
+        else:
+            st.error("❌ Product not found!")
+
+    # --- Quantity input and Add to Cart ---
+    if selected_product is not None:
+        st.success(f"Product: {selected_product['name']}")
+        st.write(f"Price: ৳{selected_product['selling_price']} per {selected_product['unit']}")
+
+        # Quantity input
+        if selected_product['unit'] in ['kg', 'gm']:
+            grams = st.number_input("Quantity in grams", min_value=0.0, step=50.0)
+            qty = grams / 1000
+        else:
+            qty = st.number_input("Quantity (pcs)", min_value=1, step=1)
+
+        if st.button("Add Product"):
+
+            if qty <= 0:
+                st.warning("Please enter valid quantity.")
+            elif qty > float(selected_product['stock_quantity']):
+                st.warning("Not enough stock available!")
+            else:
+                # Smart cart: update quantity if already in cart
+                existing = next(
+                    (i for i in st.session_state.cart
+                     if i['product_id'] == selected_product_id),
+                    None
+                )
+                if existing:
+                    existing['quantity'] += float(qty)
+                    existing['total_price'] = existing['quantity'] * existing['unit_price']
+                else:
+                    st.session_state.cart.append({
+                        'product_id': selected_product['product_id'],
+                        'product': selected_product['name'],
+                        'unit': selected_product['unit'],
+                        'quantity': float(qty),
+                        'unit_price': float(selected_product['selling_price']),
+                        'total_price': float(qty) * float(selected_product['selling_price'])
+                    })
+
+                st.success("✅ Product Added to Cart!")
 
     # ---------------- SHOW CART ----------------
     if st.session_state.cart:
@@ -483,6 +506,7 @@ elif menu == "Sales":
 
                 conn.commit()
 
+                # Generate cash memo PDF
                 pdf_bytes = generate_cash_memo_bytes(
                     sale_id, customer,
                     st.session_state.cart,
@@ -581,6 +605,7 @@ elif menu == "Dashboard":
 
 cursor.close()
 conn.close()
+
 
 
 
