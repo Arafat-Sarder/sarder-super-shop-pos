@@ -384,20 +384,30 @@ if menu == "Products":
 # ================= CUSTOMERS =================
 elif menu == "Customers":
     st.header("👤 Add Customer")
-    name = st.text_input("Customer Name")
-    phone = st.text_input("Phone")
-    address = st.text_area("Address")
-    if st.button("Add Customer"):
-        if not name:
+
+    cust_name = st.text_input("Customer Name", key="cust_name")
+    phone = st.text_input("Phone", key="cust_phone")
+    address = st.text_area("Address", key="cust_address")
+
+    if st.button("Add Customer", key="cust_add_btn"):
+        if not cust_name:
             st.warning("Customer name required!")
         else:
-            cursor.execute("INSERT INTO customers (name, phone, address) VALUES (?,?,?)", (name, phone, address))
+            cursor.execute(
+                "INSERT INTO customers (name, phone, address) VALUES (?,?,?)",
+                (cust_name, phone, address)
+            )
             conn.commit()
             st.success("Customer Added Successfully!")
-            st.experimental_rerun()
+            st.rerun()
+
     st.subheader("Customer List")
-    customers_df = pd.read_sql("SELECT * FROM customers ORDER BY customer_id DESC", conn)
-    st.dataframe(customers_df)
+
+    customers_df = pd.read_sql(
+        "SELECT * FROM customers ORDER BY customer_id DESC",
+        conn
+    )
+    st.dataframe(customers_df, use_container_width=True)
 
 # ================= EMPLOYEES =================
 elif menu == "Employees":
@@ -413,7 +423,7 @@ elif menu == "Employees":
             cursor.execute("INSERT INTO employees (name, role, salary, hired_date) VALUES (?,?,?,?)", (name, role, salary, hired_date))
             conn.commit()
             st.success("Employee Added Successfully!")
-            st.experimental_rerun()
+            st.rerun()
     st.subheader("Employee List")
     employees_df = pd.read_sql("SELECT * FROM employees ORDER BY employee_id DESC", conn)
     st.dataframe(employees_df)
@@ -431,7 +441,7 @@ elif menu == "Suppliers":
             cursor.execute("INSERT INTO suppliers (name, phone, address) VALUES (?,?,?)", (name, phone, address))
             conn.commit()
             st.success("Supplier Added Successfully!")
-            st.experimental_rerun()
+            st.rerun()
     st.subheader("Supplier List")
     suppliers_df = pd.read_sql("SELECT * FROM suppliers ORDER BY supplier_id DESC", conn)
     st.dataframe(suppliers_df)
@@ -764,6 +774,7 @@ elif menu == "Dashboard":
     
 cursor.close()
 conn.close()
+
 
 
 
