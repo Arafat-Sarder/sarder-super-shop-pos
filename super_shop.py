@@ -228,7 +228,7 @@ if menu == "Products":
             """, (name, barcode, category, unit, purchase_price, selling_price, stock_quantity, minimum_stock))
             conn.commit()
             st.success("Product Added Successfully!")
-            st.experimental_rerun()
+            st.rerun()
 
     st.markdown("---")
 
@@ -683,6 +683,7 @@ elif menu == "Dashboard":
     
 cursor.close()
 conn.close()
+
 
 
 
