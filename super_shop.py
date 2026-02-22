@@ -231,7 +231,9 @@ if menu == "Products":
                 INSERT INTO products
                 (name, barcode, category, unit, purchase_price, selling_price, stock_quantity, minimum_stock)
                 VALUES (?,?,?,?,?,?,?,?)
-            """, (name, barcode, category, unit, purchase_price, selling_price, stock_quantity, minimum_stock))
+            """, (name, barcode, category, unit,
+                  purchase_price, selling_price,
+                  stock_quantity, minimum_stock))
             conn.commit()
             st.success("Product Added Successfully!")
             st.rerun()
@@ -257,6 +259,7 @@ if menu == "Products":
 
     # ---------- EDIT PRODUCT ----------
     st.subheader("✏️ Edit Product")
+
     product_id = st.number_input(
         "Enter Product ID to Edit",
         min_value=0,
@@ -319,26 +322,31 @@ if menu == "Products":
 
         if st.button("Update Product", key="update_btn"):
 
-            # ✅ prevent duplicate barcode
-            cursor.execute(
-                "SELECT product_id FROM products WHERE barcode=? AND product_id!=?",
-                (new_barcode, product_id)
-            )
-            if cursor.fetchone():
-                st.warning("Another product already uses this barcode!")
-            else:
-                cursor.execute("""
-                    UPDATE products SET
-                    name=?, barcode=?, category=?, unit=?, purchase_price=?, selling_price=?, stock_quantity=?, minimum_stock=?
-                    WHERE product_id=?
-                """, (
-                    new_name, new_barcode, new_category, new_unit,
-                    new_purchase, new_selling, new_stock, new_min, product_id
-                ))
-                conn.commit()
-                st.success("Product Updated!")
-                st.session_state.pop("edit_product")
-                st.rerun()
+            # ✅ Only check duplicate if barcode changed
+            if new_barcode != ep["barcode"]:
+                cursor.execute(
+                    "SELECT 1 FROM products WHERE barcode=?",
+                    (new_barcode,)
+                )
+                if cursor.fetchone():
+                    st.warning("This barcode already exists!")
+                    st.stop()
+
+            cursor.execute("""
+                UPDATE products SET
+                name=?, barcode=?, category=?, unit=?,
+                purchase_price=?, selling_price=?,
+                stock_quantity=?, minimum_stock=?
+                WHERE product_id=?
+            """, (
+                new_name, new_barcode, new_category, new_unit,
+                new_purchase, new_selling, new_stock, new_min, product_id
+            ))
+            conn.commit()
+
+            st.success("Product Updated!")
+            st.session_state.pop("edit_product")
+            st.rerun()
 
     st.markdown("---")
 
@@ -367,6 +375,7 @@ if menu == "Products":
 
     # ---------- PRODUCT LIST ----------
     st.subheader("📋 Product List")
+
     products_df = pd.read_sql(
         "SELECT * FROM products ORDER BY product_id DESC",
         conn
@@ -755,6 +764,7 @@ elif menu == "Dashboard":
     
 cursor.close()
 conn.close()
+
 
 
 
