@@ -201,7 +201,10 @@ menu = st.sidebar.selectbox("Select Module",
 
 # ================= PRODUCTS =================
 if menu == "Products":
-    st.header("Add Product")
+    st.header("📦 Product Management")
+
+    # ---------- ADD PRODUCT ----------
+    st.subheader("➕ Add Product")
     name = st.text_input("Product Name")
     barcode = st.text_input("Barcode (Unique for scanning)")
     category = st.selectbox("Category", ["Food","Electronics","Clothing","Stationery","Groceries","Toiletries"])
@@ -227,10 +230,76 @@ if menu == "Products":
             st.success("Product Added Successfully!")
             st.experimental_rerun()
 
-    st.subheader("Product List")
-    products_df = pd.read_sql("SELECT * FROM products ORDER BY product_id DESC", conn)
+    st.markdown("---")
+
+    # ---------- SEARCH PRODUCT ----------
+    st.subheader("🔍 Search Product")
+    search = st.text_input("Search by name or barcode")
+
+    query = "SELECT * FROM products"
+    if search:
+        query += f" WHERE name LIKE '%{search}%' OR barcode LIKE '%{search}%'"
+
+    products_df = pd.read_sql(query, conn)
     st.dataframe(products_df)
 
+    # ---------- EDIT PRODUCT ----------
+    st.subheader("✏️ Edit Product")
+    product_id = st.number_input("Enter Product ID to Edit", min_value=0, step=1)
+
+    if st.button("Load Product"):
+        cursor.execute("SELECT * FROM products WHERE product_id=?", (product_id,))
+        product = cursor.fetchone()
+
+        if product:
+            st.session_state.edit_product = dict(product)
+        else:
+            st.warning("Product not found!")
+
+    if "edit_product" in st.session_state:
+        ep = st.session_state.edit_product
+
+        new_name = st.text_input("Product Name", ep["name"])
+        new_barcode = st.text_input("Barcode", ep["barcode"])
+        new_category = st.selectbox("Category",
+                                    ["Food","Electronics","Clothing","Stationery","Groceries","Toiletries"],
+                                    index=["Food","Electronics","Clothing","Stationery","Groceries","Toiletries"].index(ep["category"]))
+        new_unit = st.selectbox("Unit", ["pcs","kg","gm","liter","ml","pack","box","cup"], index=0)
+        new_purchase = st.number_input("Purchase Price", float(ep["purchase_price"]))
+        new_selling = st.number_input("Selling Price", float(ep["selling_price"]))
+        new_stock = st.number_input("Stock Quantity", int(ep["stock_quantity"]))
+        new_min = st.number_input("Minimum Stock", int(ep["minimum_stock"]))
+
+        if st.button("Update Product"):
+            cursor.execute("""
+                UPDATE products SET
+                name=?, barcode=?, category=?, unit=?, purchase_price=?, selling_price=?, stock_quantity=?, minimum_stock=?
+                WHERE product_id=?
+            """, (new_name, new_barcode, new_category, new_unit,
+                  new_purchase, new_selling, new_stock, new_min, product_id))
+            conn.commit()
+            st.success("Product Updated!")
+            st.session_state.pop("edit_product")
+            st.experimental_rerun()
+
+    st.markdown("---")
+
+    # ---------- DELETE PRODUCT ----------
+    st.subheader("🗑️ Delete Product")
+    del_id = st.number_input("Enter Product ID to Delete", min_value=0, step=1)
+
+    if st.button("Delete Product"):
+        cursor.execute("DELETE FROM products WHERE product_id=?", (del_id,))
+        conn.commit()
+        st.success("Product Deleted!")
+        st.experimental_rerun()
+
+    st.markdown("---")
+
+    # ---------- PRODUCT LIST ----------
+    st.subheader("📋 Product List")
+    products_df = pd.read_sql("SELECT * FROM products ORDER BY product_id DESC", conn)
+    st.dataframe(products_df)
 # ================= CUSTOMERS =================
 elif menu == "Customers":
     st.header("👤 Add Customer")
@@ -614,6 +683,7 @@ elif menu == "Dashboard":
     
 cursor.close()
 conn.close()
+
 
 
 
